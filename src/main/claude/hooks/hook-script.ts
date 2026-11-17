@@ -28,6 +28,7 @@ import {
   buildPosixClaudeDecisionPreludeLines,
   wrapPosixClaudeDecisionPost
 } from './claude-hook-decision-script'
+import { wrapPosixPromptHookDetach } from './claude-prompt-hook-detach'
 import {
   WINDOWS_CLAUDE_BACKGROUND_JOB_GUARD,
   buildPosixClaudeBackgroundJobGuardLines
@@ -94,30 +95,32 @@ export function getManagedScript(
         ]
       : []),
     ...buildPosixClaudeBackgroundJobGuardLines(),
-    ...(source === 'claude' ? buildHookProcessCapture() : []),
-    // Surviving PTYs need fresh endpoint coordinates; suppress errors and survive outer set -e.
-    'if [ -n "$ORCA_AGENT_HOOK_ENDPOINT" ] && [ -r "$ORCA_AGENT_HOOK_ENDPOINT" ]; then',
-    '  unset ORCA_AGENT_HOOK_TRANSPORT',
-    '  . "$ORCA_AGENT_HOOK_ENDPOINT" 2>/dev/null || :',
-    'fi',
-    'if [ -z "$ORCA_AGENT_HOOK_PORT" ] || [ -z "$ORCA_AGENT_HOOK_TOKEN" ] || [ -z "$ORCA_PANE_KEY" ]; then',
-    '  spool_hook_event',
-    '  exit 0',
-    'fi',
-    ...buildPosixHookMetadataCacheLines(),
-    // Keep hook JSON off argv and avoid URL-encoded paths that trigger IDS rules.
-    ...(decides
-      ? wrapPosixClaudeDecisionPost(
-          buildPosixAgentHookPostCommand(source, {
-            decisionHeaderVar: 'orca_hook_decides',
-            cachedMetadata: true
-          })
-        )
-      : buildPosixAgentHookPostCommand(source, { cachedMetadata: true }).map(
-          (line, index, lines) =>
-            index === lines.length - 1 ? `${line} >/dev/null 2>&1 || spool_hook_event` : line
-        )),
-    'exit 0',
+    ...wrapPosixPromptHookDetach([
+      ...(source === 'claude' ? buildHookProcessCapture() : []),
+      // Surviving PTYs need fresh endpoint coordinates; suppress errors and survive outer set -e.
+      'if [ -n "$ORCA_AGENT_HOOK_ENDPOINT" ] && [ -r "$ORCA_AGENT_HOOK_ENDPOINT" ]; then',
+      '  unset ORCA_AGENT_HOOK_TRANSPORT',
+      '  . "$ORCA_AGENT_HOOK_ENDPOINT" 2>/dev/null || :',
+      'fi',
+      'if [ -z "$ORCA_AGENT_HOOK_PORT" ] || [ -z "$ORCA_AGENT_HOOK_TOKEN" ] || [ -z "$ORCA_PANE_KEY" ]; then',
+      '  spool_hook_event',
+      '  exit 0',
+      'fi',
+      ...buildPosixHookMetadataCacheLines(),
+      // Keep hook JSON off argv and avoid URL-encoded paths that trigger IDS rules.
+      ...(decides
+        ? wrapPosixClaudeDecisionPost(
+            buildPosixAgentHookPostCommand(source, {
+              decisionHeaderVar: 'orca_hook_decides',
+              cachedMetadata: true
+            })
+          )
+        : buildPosixAgentHookPostCommand(source, { cachedMetadata: true }).map(
+            (line, index, lines) =>
+              index === lines.length - 1 ? `${line} >/dev/null 2>&1 || spool_hook_event` : line
+          )),
+      'exit 0'
+    ]),
     ''
   ].join('\n')
 }
