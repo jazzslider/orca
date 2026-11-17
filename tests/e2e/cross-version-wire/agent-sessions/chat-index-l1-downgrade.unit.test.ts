@@ -24,13 +24,13 @@ const live = agentSessionRecordFixture(agentSessionLeaseFixture({ sessionId: 'li
 
 type Rows = { records: Map<string, { lease: { unreconciled: boolean } }> }
 const flags = (rows: unknown) =>
-  Object.fromEntries([...(rows as Rows).records].map(([id, r]) => [id, r.lease.unreconciled]))
+  Object.fromEntries([...(rows as Rows).records].map(([id, r]) => [id, r.lease.unreconciled === true]))
 const savedFlags = (db: { prepare: (s: string) => { all: () => Record<string, unknown>[] } }) =>
   Object.fromEntries(
     db
       .prepare('SELECT session_id, record_json FROM agent_session_records')
       .all()
-      .map((row) => [row.session_id, JSON.parse(String(row.record_json)).lease.unreconciled])
+      .map((row) => [row.session_id, JSON.parse(String(row.record_json)).lease.unreconciled === true])
   )
 
 for (const ref of ['v1.4.259', 'v1.4.260', 'v1.4.261']) {
@@ -47,7 +47,8 @@ for (const ref of ['v1.4.259', 'v1.4.260', 'v1.4.261']) {
       })
       // This build: only the lease that may be held is marked.
       const current = await openTestAgentSessionRecordStore(directory)
-      expect(current.getRecord('idle')?.lease.unreconciled).toBe(false)
+      expect(current.getRecord("idle")).toBeDefined()
+      expect(current.getRecord("idle")?.lease.unreconciled === true).toBe(false)
       expect(current.getRecord('live')?.lease.unreconciled).toBe(true)
       await closeTestAgentSessionDatabase(directory)
       const checkout = await materializeReleaseCheckout(ref)
@@ -62,12 +63,12 @@ for (const ref of ['v1.4.259', 'v1.4.260', 'v1.4.261']) {
       })
       // Back on this build after the older one left every lease marked (e.g. it quit before reconciling).
       const reopened = await openTestAgentSessionRecordStore(directory)
-      expect(reopened.getRecord('idle')?.lease.unreconciled).toBe(rows.installAgentSessionStoreRows ? true : false)
+      expect(reopened.getRecord("idle")?.lease.unreconciled === true).toBe(rows.installAgentSessionStoreRows ? true : false)
       await reopened.reconcileOnRestart({
         probe: async () => ({ outcome: 'pid-absent' }),
         now: 90_000
       })
-      expect(reopened.listRecords().map((r) => [r.sessionId, r.lease.unreconciled])).toEqual([
+      expect(reopened.listRecords().map((r) => [r.sessionId, r.lease.unreconciled === true])).toEqual([
         ['idle', false],
         ['live', false]
       ])
